@@ -2532,6 +2532,39 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 session.abort(runtime)
                 self.assertEqual(session.lease.outcome, "aborted")
 
+    def test_dispatch_receipt_preserves_observed_agent_ownership(self):
+        for start_agent, receipt_agent, accepted in (
+            (None, None, True),
+            ("coordinator", "coordinator", True),
+            ("coordinator", "another-agent", False),
+            (None, "another-agent", False),
+            ("coordinator", None, False),
+        ):
+            with self.subTest(start=start_agent, receipt=receipt_agent), snapshot() as root:
+                _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+                for _, event in events:
+                    if event.get("data", {}).get("toolCallId") != runtime.dispatch_id:
+                        continue
+                    if event["type"] == "tool.execution_start":
+                        agent = start_agent
+                    elif event["type"] == "tool.execution_complete":
+                        agent = receipt_agent
+                    else:
+                        continue
+                    if agent is None:
+                        event.pop("agentId", None)
+                    else:
+                        event["agentId"] = agent
+                runtime.events = tuple(events)
+                session.begin(runtime, reviewer)
+                if accepted:
+                    self.assertIsNotNone(session.finish(runtime))
+                else:
+                    with self.assertRaisesRegex(model.ReviewError, "dispatch completion"):
+                        session.finish(runtime)
+                    session.abort(runtime)
+                    self.assertEqual(session.lease.outcome, "aborted")
+
     def test_invalid_completed_review_can_be_retired_without_admission(self):
         mutations = (
             ("missing-commitment", lambda events: events.__setitem__(

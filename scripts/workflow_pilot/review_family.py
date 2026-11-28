@@ -1199,6 +1199,7 @@ class CliReviewRuntime:
         self.interaction = None
         self.prompt = None
         self.dispatch_started_at = None
+        self.dispatch_agent = None
         self.started_at = None
         self.completed_at = None
         self.requested_duration = None
@@ -1225,6 +1226,7 @@ class CliReviewRuntime:
         dispatch = dispatches[0][1]
         data = dispatch["data"]
         self.dispatch_started_at = dispatch["timestamp"]
+        self.dispatch_agent = dispatch.get("agentId")
         require(data.get("toolName") == "task", "review dispatch is not a task operation")
         arguments = data.get("arguments")
         require(isinstance(arguments, dict), "review task arguments are missing")
@@ -1361,6 +1363,7 @@ class CliReviewRuntime:
                             and event.get("data", {}).get("toolCallId") == self.dispatch_id]
         require(len(root_completions) == 1
                 and root_completions[0]["data"].get("success") is True
+                and root_completions[0].get("agentId") == self.dispatch_agent
                 and timestamp(self.dispatch_started_at)
                 <= timestamp(root_completions[0]["timestamp"]),
                 "task dispatch completion is missing or failed")

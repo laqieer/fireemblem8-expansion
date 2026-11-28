@@ -1246,6 +1246,10 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    coordinator rereads for reviewer observations. This is the owner-approved instruction-based
    trust model: it does not claim technically enforced permissions or task
    termination.
+   The dispatch start and receipt must agree on their observed `agentId`,
+   including native root events where both omit it. Reject mismatched or
+   one-sided agent attribution while retaining terminal-only abort.
+   Run `CliReviewRuntimeTests.test_dispatch_receipt_preserves_observed_agent_ownership`.
    Replay both the original three-field UTF-8 assignment and the current
    four-field assignment using their actual dispatched prompts and receipts.
    Reject missing, duplicated, mixed, unsupported or contradictory path/side
