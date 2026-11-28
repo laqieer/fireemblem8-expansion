@@ -879,8 +879,9 @@ and fails admission: the aggregate input does not establish that the child's
 untagged events belong exclusively to that reviewer. In the shared root,
 untagged activity is not attributed by turn or interaction ID, which can also
 identify coordinator activity. The adapter cannot prove ownership of untagged
-activity from this stream; dispatch-time read-only role restrictions remain
-necessary.
+activity from this stream. Under the accepted instruction-based model, the
+reviewer's commitment is required, but unobserved prohibited activity cannot
+be ruled out and technical dispatch-time restrictions are not claimed.
 `begin` requires `runtime.start` to return a nonblank string task identity,
 preserved unchanged. Missing, blank or wrong-type handles unwind the attempted
 reservation before any lease or local report can be created; a later valid

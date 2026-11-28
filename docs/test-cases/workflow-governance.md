@@ -1274,7 +1274,8 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    than assuming that child's untagged records are exclusive to the reviewer.
    In a shared root, unrelated untagged activity, including a reused turn or
    interaction ID, must not invalidate the review. Such IDs alone do not prove
-   ownership; this check does not replace dispatch-time role restrictions.
+   ownership; the instruction commitment does not prove that unobserved
+   prohibited activity was prevented.
    Complete two different reviewers in one root, then reassess them using
    their own snapshots in either order. The older snapshot must not invalidate
    the newer report, while altering a captured record still invalidates its
