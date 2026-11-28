@@ -1285,6 +1285,14 @@ class SubjectTests(SubjectTestCase):
         self.assertEqual((unknown["verdict"], unknown["kind"], unknown["checks"]),
                          ("unavailable", None, 0))
 
+    def test_session_terminal_subject_checks_valid_and_late_activity(self):
+        members = self.tools.members(self.scope("session"))
+        lifecycle = tuple(item for item in members if item.family == "lifecycle")
+        observed = self.run_members(lifecycle, self.repo.base)
+        terminal = tuple(item for item in observed if item.obligation.probe == "lifecycle:terminals")
+        self.assertEqual(len(terminal), 1)
+        self.assert_satisfied(terminal)
+
     def test_immutable_git_bytes_not_reopened_worktree_and_no_fsmonitor(self):
         tree = GitTree(self.repo.root, self.repo.base)
         path = "scripts/workflow_pilot/review_family.py"

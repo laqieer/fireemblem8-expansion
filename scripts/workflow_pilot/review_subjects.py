@@ -2496,53 +2496,99 @@ def _session_probe(probe: str) -> dict:
             check(state.hold is None, "valid architecture disposition did not resume")
             owners = module.ReviewOwnership()
             first = completed_session(owners, 1, "reviewer-a", "dispatch-a", "root-a")
-            second, _ = completed_session(
-                owners, 2, "reviewer-b", "dispatch-b", "root-b", finish=False)
+            reader = CandidateReader()
+            scope = frozenset({"case"})
+            targets = {}
+            for side in ("base", "head"):
+                targets[("case.txt", side)] = {
+                    "tool_path": str(Path.cwd() / ("review-" + side + ".txt")),
+                    "content": reader("case.txt", side)["data"],
+                    "summary": reader.describe("case.txt", side),
+                    "encoding": "utf-8",
+                }
+            assigned = json.dumps(
+                [[path, side, target["tool_path"], target["encoding"]]
+                 for (path, side), target in sorted(targets.items())],
+                ensure_ascii=True, separators=(",", ":"))
+            prompt = module._review_instructions(b, scope, assigned)
+
+            def native_event(kind, second, agent, data):
+                return ("root-b", {
+                    "type": kind, "timestamp": f"2026-01-01T00:00:{second:02d}Z",
+                    "agentId": agent, "data": data,
+                })
+
+            events = [
+                native_event("tool.execution_start", 0, "coordinator", {
+                    "toolCallId": "dispatch-b", "toolName": "task",
+                    "arguments": {"prompt": prompt, "agent_type": "code-review"},
+                }),
+                native_event("subagent.started", 1, "reviewer-b", {
+                    "toolCallId": "dispatch-b", "interactionId": "interaction-1",
+                    "agentType": "code-review",
+                }),
+                native_event("user.message", 2, "reviewer-b", {
+                    "source": "agent-root-b", "interactionId": "interaction-1",
+                    "turnId": "turn-0", "transformedContent": prompt,
+                }),
+                native_event("assistant.message", 3, "reviewer-b", {
+                    "interactionId": "interaction-1", "turnId": "turn-0",
+                    "phase": "commentary", "content": module.CliReviewRuntime.COMMITMENT,
+                }),
+            ]
+            for index, (_, target) in enumerate(sorted(targets.items())):
+                call_id = f"view-{index}"
+                events.extend((
+                    native_event("tool.execution_start", 4 + index * 2, "reviewer-b", {
+                        "turnId": "turn-0", "toolCallId": call_id, "toolName": "view",
+                        "arguments": {"path": target["tool_path"]},
+                    }),
+                    native_event("tool.execution_complete", 5 + index * 2, "reviewer-b", {
+                        "interactionId": "interaction-1", "turnId": "turn-0",
+                        "toolCallId": call_id, "success": True,
+                        "result": {"content": target["content"].decode("utf-8")},
+                    }),
+                ))
+            events.extend((
+                native_event("assistant.message", 8, "reviewer-b", {
+                    "interactionId": "interaction-1", "turnId": "turn-1",
+                    "phase": "final_answer",
+                    "content": json.dumps({"candidate_sha": b, "scope": sorted(scope),
+                                           "findings": []}),
+                }),
+                native_event("subagent.completed", 9, "reviewer-b", {
+                    "toolCallId": "dispatch-b",
+                }),
+                native_event("tool.execution_complete", 3, "coordinator", {
+                    "toolCallId": "dispatch-b", "success": True,
+                }),
+            ))
+            native = module.CliReviewRuntime(
+                events, dispatch_id="dispatch-b", root_session_id="root-b",
+                candidate_reader=reader, required_reads=targets)
+            second = module.ReviewSession(
+                "coordinator", "implementer", scope, b,
+                identity=("owner/repo", 2, a), owners=owners,
+                readers={"read-candidate": reader})
+            second.begin(native, "reviewer-b")
+            check(len(native.read("dispatch-b").candidate_reads) == 2,
+                  "valid terminal baseline was not readable")
             late_a = ("root-a-reviewer", {
                 "type": "assistant.turn_start", "timestamp": "2026-01-01T00:01:00Z",
                 "agentId": "reviewer-a", "data": {"turnId": "late"},
             })
-            late_b = ("root-b-reviewer", {
+            late_b = ("root-b", {
                 "type": "assistant.turn_start", "timestamp": "2026-01-01T00:01:00Z",
                 "agentId": "reviewer-b", "data": {"turnId": "late"},
             })
-            native = object.__new__(module.CliReviewRuntime)
-            native.root_session_id = "root-b"
-            native.reviewer_session_id = "root-b-reviewer"
-            native.reviewer = "reviewer-b"
-            native.dispatch_id = "dispatch-b"
-            native.interaction = "interaction-1"
-            native.started_at = "2026-01-01T00:00:01Z"
-            native.dispatch_started_at = "2026-01-01T00:00:00Z"
-            native.received_at = module.timestamp("2026-01-01T00:00:02Z")
-            native.assigned_candidate = b
-            native.assigned_subjects = tuple(sorted(second.scope))
-            native.assigned_owner = "reviewer-b"
-            native.events = first.latest_cli_events + (
-                ("root-b", {
-                    "type": "tool.execution_start", "timestamp": native.dispatch_started_at,
-                    "agentId": "coordinator",
-                    "data": {"toolCallId": native.dispatch_id, "toolName": "task"},
-                }),
-                ("root-b", {
-                    "type": "subagent.started", "timestamp": native.started_at,
-                    "agentId": native.reviewer,
-                    "data": {"toolCallId": native.dispatch_id,
-                             "interactionId": native.interaction, "agentType": "code-review"},
-                }),
-                ("root-b", {
-                    "type": "subagent.completed", "timestamp": "2026-01-01T00:00:05Z",
-                    "agentId": native.reviewer, "data": {"toolCallId": native.dispatch_id},
-                }),
-                ("root-b", {
-                    "type": "tool.execution_complete", "timestamp": "2026-01-01T00:00:03Z",
-                    "agentId": "coordinator",
-                    "data": {"toolCallId": native.dispatch_id, "success": True},
-                }),
-                late_a, late_b,
-            )
-            check(rejects(lambda: second.finish(native)),
-                  "late reviewer activity was admitted")
+            native.events = first.latest_cli_events + tuple(events) + (late_a, late_b)
+            try:
+                second.finish(native)
+            except module.ReviewError as error:
+                check("outside its assigned task" in str(error),
+                      "terminal rejection was not caused by late reviewer activity")
+            else:
+                raise ContractViolation("late reviewer activity was admitted")
             check(rejects(lambda: first.review_state(
                 (), (), pre_review_required=True)),
                 "failed terminal read lost another closed reviewer's late activity")
