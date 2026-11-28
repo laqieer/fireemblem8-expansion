@@ -1868,14 +1868,14 @@ The producer suite's real graphics/linker controls also use libpng,
 pkg-config and ARM binutils; its extended Build owner installs those existing
 consumer prerequisites. They are not requirements of the standalone registry
 command above.
-The existing required `extended-host-tests` Build worker runs this complete
-process suite through `ownership-probe-test` in full Build mode, in parallel
-with the host localization work. Lightweight `tests/workflows` checks verify
+The required `ownership-probe-tests` Build worker runs this complete process
+suite through `ownership-probe-test` in full Build mode, in parallel with the
+host localization work. Lightweight `tests/workflows` checks verify
 the single full-mode owner, complete unittest selection and absence of duplicate
 native discovery in the host job. Metadata-only and review-first preflight runs
 do not execute that native owner. The protected host command sequence, job
-timeouts, combined summary and all candidate/master requirements are unchanged;
-there is no added workflow, job or required-context name.
+timeouts, combined summary and all candidate/master requirements remain in
+force; the live branch-protection contexts do not change.
 
 ## Trust boundary
 
