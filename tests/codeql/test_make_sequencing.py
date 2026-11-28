@@ -39,7 +39,7 @@ def marker(path):
 
 class CodeqlMakeSequencingTests(unittest.TestCase):
     def run_target(self, *, failing="", defective="", selected_make=None, inspect_binary=False,
-                   makefile_transform=None):
+                   probe_directory_options=False):
         compiler = shutil.which("gcc")
         make = selected_make or shutil.which("make")
         self.assertIsNotNone(compiler, "GCC is required by the CodeQL analyzer lane")
@@ -51,14 +51,7 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
             root = Path(directory)
             work = root / "work"
             excluded = {"src", "tests", "tools", "build", "GNUmakefile", "config.autotools.mk"}
-            if makefile_transform is not None:
-                excluded.add("Makefile")
             overlay(ROOT, work, excluded)
-            if makefile_transform is not None:
-                (work / "Makefile").write_text(
-                    makefile_transform((ROOT / "Makefile").read_text(encoding="utf-8")),
-                    encoding="utf-8",
-                )
             (work / "build").mkdir()
             overlay(ROOT / "src", work / "src",
                     {"sio_core.c", "bmtrick.c", "event.c", "eventscr.c"})
@@ -146,6 +139,30 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
                 cwd=work, env=environment, text=True, capture_output=True, timeout=60,
             )
             events = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+            if probe_directory_options and result.returncode == 0:
+                probe_log = root / "option-events"
+                probe_output = root / "option-output"
+                probe_environment = dict(environment, PROBE_LOG=str(probe_log),
+                                         PROBE_MAKE_LOG=str(root / "option-make-log"))
+                wrapper = make if selected_make else str(submake)
+                for args in (
+                    ("-C", ".", "codeql-fanalyzer-test"),
+                    ("-C", "tools/gbagfx"),
+                    ("-Ctools/gbagfx",),
+                    ("--directory", "tools/gbagfx"),
+                    ("--directory=tools/gbagfx",),
+                ):
+                    probe = subprocess.run(
+                        [wrapper, "--no-print-directory", *args, f"HOST_CC={compiler}",
+                         f"CODEQL_TEST_DIR={probe_output}", "CODEQL_REQUIRE_FANALYZER=1",
+                         "ASSET_MAINTENANCE_GOALS=codeql-fanalyzer-test",
+                         "AUTOTOOLS_CONFIG_MK=config.autotools.mk", "MAKE_RESTARTS=1"],
+                        cwd=work, env=probe_environment, text=True, capture_output=True, timeout=60,
+                    )
+                    self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
+                self.assertEqual(probe_log.read_text(encoding="utf-8").splitlines(), ["analyzer"])
+                for name in ("sio_core", "event", "convert_png"):
+                    self.assertTrue((probe_output / (name + "_analyzer.o")).is_file())
             if inspect_binary and result.returncode == 0:
                 nm = shutil.which("nm")
                 self.assertIsNotNone(nm, "GNU binutils is required")
@@ -202,7 +219,7 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
                 self.assertIn(path, result.stderr)
                 self.assertIn(f"analyzer-{diagnostic}", result.stderr)
 
-    def check_selected_make(self, makefile_transform=None):
+    def check_selected_make(self, probe_directory_options=False):
         real_make = shutil.which("make")
         self.assertIsNotNone(real_make)
         with tempfile.TemporaryDirectory(prefix="codeql-make-") as directory:
@@ -232,7 +249,7 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
             log = root / "make-log"
             with mock.patch.dict(os.environ, {"PROBE_MAKE_LOG": str(log)}):
                 result, _ = self.run_target(selected_make=selected,
-                                            makefile_transform=makefile_transform)
+                                            probe_directory_options=probe_directory_options)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             calls = log.read_text(encoding="utf-8").splitlines()
             self.assertEqual(len(calls), 2, calls)
@@ -244,21 +261,10 @@ class CodeqlMakeSequencingTests(unittest.TestCase):
         self.check_selected_make()
 
     def test_equivalent_recursive_make_directory_options(self):
-        def transformed(directory_option):
-            def transform(content):
-                analyzer = "$(MAKE) --no-print-directory codeql-fanalyzer-test"
-                tool = "$(MAKE) -C tools/gbagfx"
-                self.assertIn(analyzer, content)
-                self.assertIn(tool, content)
-                return content.replace(
-                    analyzer, "$(MAKE) -C . --no-print-directory codeql-fanalyzer-test"
-                ).replace(tool, "$(MAKE) " + directory_option)
-            return transform
-
-        result, events = self.run_target(makefile_transform=transformed("-Ctools/gbagfx"))
+        result, events = self.run_target(probe_directory_options=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(events[-1:], ["analyzer"])
-        self.check_selected_make(makefile_transform=transformed("--directory=tools/gbagfx"))
+        self.check_selected_make(probe_directory_options=True)
 
 
 if __name__ == "__main__":
