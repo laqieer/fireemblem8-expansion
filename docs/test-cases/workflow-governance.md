@@ -1279,6 +1279,16 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    their own snapshots in either order. The older snapshot must not invalidate
    the newer report, while altering a captured record still invalidates its
    owner. The pre-fix negative control invalidates the newer report.
+   Change the dispatch prompt, reviewer start timestamp, or receipt source
+   after `begin`: each must reject admission, while terminal-only abort still
+   retires the observed task. After closure, reuse the dispatch ID in the same
+   root with a different reviewer; the original report must be invalidated.
+   The same ID in a different root does not invalidate it.
+   Drop the last external reference to an active or completed session and
+   collect it. The ownership index must not retain that session or its event
+   sources; an orphaned active reservation remains blocked and a closed owner
+   cannot be reused. Compact closure metadata is retained and is not globally
+   bounded.
    A late assistant turn-start in
    the second reviewer's event session must invalidate only the second report.
    Include that late event in the first reviewer's aggregate snapshot; the

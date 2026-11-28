@@ -775,8 +775,9 @@ def _cli_event_key(record):
     require(isinstance(session, str) and isinstance(event, dict),
             "invalid CLI event record")
     try:
-        return json.dumps(
+        serialized = json.dumps(
             (session, event), ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(serialized.encode("ascii")).hexdigest()
     except (TypeError, ValueError) as error:
         raise ReviewError("CLI event record is not serializable") from error
 
@@ -860,7 +861,6 @@ class _OwnedReview:
     completed_at: str | None = None
     admitted_event_keys: frozenset[str] = frozenset()
     event_sessions: frozenset[str] = frozenset()
-    event_sources: list = field(default_factory=list)
     report: _ReviewReport | None = None
     invalidation_reason: str | None = None
 
@@ -874,7 +874,10 @@ class ReviewOwnership:
             left[0] is None or right[0] is None or left[0] == right[0])
 
     def __init__(self):
-        self.records: dict[ReviewSession, _OwnedReview] = {}
+        self.records: dict[object, _OwnedReview] = {}
+
+    def record_for(self, session):
+        return None if session is None else self.records.get(session._ownership_key)
 
     def _has_closed_owner(self, owner_key):
         return any(
@@ -901,12 +904,12 @@ class ReviewOwnership:
                          (record.identity[:2] == session.identity[:2] or record.head == session.head
                           or self._same_owner_scope((record.namespace, record.owner), owner_key))),
                     "duplicate/overlapping review ownership")
-        self.records[session] = _OwnedReview(
+        self.records[session._ownership_key] = _OwnedReview(
             session.identity, session.head, session.scope, session.owner,
             session.dispatch_namespace)
 
     def bind_dispatch(self, session, task):
-        record = self.records[session]
+        record = self.records[session._ownership_key]
         require(record.dispatch is None or record.dispatch == task,
                 "review dispatch identity changed after binding")
         require(not self.is_closed(record.namespace, task, record.owner),
@@ -918,13 +921,13 @@ class ReviewOwnership:
         record.dispatch = task
 
     def release_before_dispatch(self, session):
-        self.records.pop(session, None)
+        self.records.pop(session._ownership_key, None)
 
     def finish(self, session, task, owner, interaction, completed_at,
                dispatch_namespace=None, admitted_event_keys=(), admitted_event_sessions=(),
                event_source=(), report=None):
         owner_key = dispatch_namespace, owner
-        record = self.records[session]
+        record = self.records[session._ownership_key]
         require(record.state != "terminal" and record.dispatch == task
                 and (record.namespace, record.owner) == owner_key,
                 "review owner or dispatch changed before logical closure")
@@ -952,7 +955,7 @@ class ReviewOwnership:
         record.completed_at = completed_at
         record.admitted_event_keys = frozenset(admitted_event_keys)
         record.event_sessions = sessions
-        record.event_sources.append(event_source)
+        session.event_sources.append(event_source)
         record.report = report
 
     def validate_closed_events(self, events, *, snapshot_namespace=None, snapshot_owner=None):
@@ -973,7 +976,7 @@ class ReviewOwnership:
                 snapshot_keys.setdefault(record[0], set()).add(event_key)
             for closed in self.records.values():
                 if (closed.state != "terminal" or closed.namespace != snapshot_namespace
-                        or closed is not self.records.get(snapshot_owner)
+                        or closed is not self.record_for(snapshot_owner)
                         or not closed.admitted_event_keys
                         or closed.invalidation_reason is not None):
                     continue
@@ -992,10 +995,14 @@ class ReviewOwnership:
             if not is_review_activity(event):
                 continue
             agent = event.get("agentId")
-            if not isinstance(agent, str):
-                continue
+            data = event.get("data")
             for closed in self.records.values():
-                if (closed.state != "terminal" or closed.owner != agent
+                dispatch_event = (
+                    closed.namespace is not None and event_session == closed.namespace
+                    and isinstance(data, dict) and data.get("toolCallId") == closed.dispatch
+                    and event.get("type") in {"tool.execution_start", "tool.execution_complete",
+                                               "subagent.started", "subagent.completed"})
+                if (closed.state != "terminal" or (closed.owner != agent and not dispatch_event)
                         or (isinstance(event_session, str) and closed.namespace is not None
                             and event_session not in closed.event_sessions)):
                     continue
@@ -1027,16 +1034,16 @@ class ReviewOwnership:
                     closed.invalidation_reason = message
 
     def validate_session(self, session):
-        record = self.records.get(session)
+        record = self.record_for(session)
         if record is not None:
-            for source in record.event_sources:
+            for source in session.event_sources:
                 self.validate_closed_events(source)
             require(record.invalidation_reason is None,
                     f"review task evidence was invalidated: {record.invalidation_reason}")
 
     def owns_completed_report(self, session, report):
         self.validate_session(session)
-        record = self.records.get(session)
+        record = self.record_for(session)
         return bool(record is not None and record.state == "terminal"
                     and record.report is report and record.identity == session.identity
                     and record.head == report.head and record.scope == report.subjects
@@ -1162,6 +1169,7 @@ class CliReviewRuntime:
         self.result = None
         self.validated_event_keys = frozenset()
         self.validated_event_sessions = frozenset()
+        self.assignment_event_keys = None
 
     def start(self, **expected):
         self.assigned_candidate = expected.get("candidate")
@@ -1231,6 +1239,8 @@ class CliReviewRuntime:
         self._validate_prompt(prompt)
         require(expected.get("owner") == self.reviewer,
                 "observed reviewer identity differs from the coordinator assignment")
+        self.assignment_event_keys = frozenset(
+            _cli_event_key(record) for record in (dispatches[0], starts[0], received[0]))
         return self.dispatch_id
 
     def _validate_prompt(self, prompt):
@@ -1317,13 +1327,24 @@ class CliReviewRuntime:
 
     def read(self, task):
         terminal = self.read_terminal(task)
+        require(self.assignment_event_keys is not None,
+                "review assignment was not validated")
+        assignment_keys = frozenset(
+            _cli_event_key((session, event)) for session, event in self.events
+            if session == self.root_session_id and (
+                (event.get("type") in {"tool.execution_start", "subagent.started"}
+                 and event.get("data", {}).get("toolCallId") == self.dispatch_id)
+                or (event.get("type") == "user.message" and event.get("agentId") == self.reviewer
+                    and event.get("data", {}).get("interactionId") == self.interaction)))
+        require(self.assignment_event_keys <= assignment_keys,
+                "review assignment records changed after validation")
         dispatch_receipt = self._validate_dispatch_receipt()
         completed_at = terminal.completed_at
         child = self._review_activity_records()
         self.validated_event_keys = validate_reviewer_activity(
             child, owner=self.reviewer, dispatch=self.dispatch_id,
             interaction=self.interaction, started_at=self.started_at,
-            completed_at=completed_at) | {_cli_event_key(dispatch_receipt)}
+            completed_at=completed_at) | self.assignment_event_keys | {_cli_event_key(dispatch_receipt)}
         self.validated_event_sessions = frozenset(
             session for session, event in child if is_review_activity(event))
         turn_ids = {
@@ -1551,6 +1572,8 @@ class ReviewSession:
         self.task: str | None = None
         self.dispatch_namespace: str | None = None
         self.latest_cli_events = ()
+        self.event_sources = []
+        self._ownership_key = object()
         self.begin_failed = False
 
     def _candidate_reader(self):
@@ -1880,9 +1903,9 @@ class ReviewSession:
         require(isinstance(events, (tuple, list)), "CLI event observations must be a collection")
         self.latest_cli_events = self.latest_cli_events + tuple(events)
         if self.owners is not None:
-            record = self.owners.records.get(self)
+            record = self.owners.record_for(self)
             if record is not None and record.state == "terminal":
-                record.event_sources.append(events)
+                self.event_sources.append(events)
             self.owners.validate_closed_events(
                 self.latest_cli_events, snapshot_namespace=self.dispatch_namespace,
                 snapshot_owner=self)

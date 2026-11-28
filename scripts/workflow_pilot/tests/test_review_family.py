@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
+import weakref
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -1225,7 +1226,7 @@ class RoleTests(unittest.TestCase):
                 self.assertIsNone(session.lease)
                 self.assertIsNone(session.report)
                 self.assertEqual(session.accepted, {})
-                self.assertEqual(owners.records[session].state, "reserved")
+                self.assertEqual(owners.record_for(session).state, "reserved")
                 actual_task = "actual-runtime-task:42 "
                 runtime.result.task = actual_task
                 runtime.result.findings = (replace(finding, review_id="local:" + actual_task),)
@@ -1568,6 +1569,71 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 session.begin(runtime, reviewer)
             self.assertIsNone(session.report)
             session.abort(runtime)
+
+    def test_refreshed_assignment_records_cannot_change_after_start(self):
+        for variant in ("prompt", "start", "receipt-source"):
+            with self.subTest(variant=variant), snapshot() as root:
+                _, runtime, session, events, times, reviewer, _ = self.native_runtime(root)
+                session.begin(runtime, reviewer)
+                if variant == "prompt":
+                    events[0][1]["data"]["arguments"]["prompt"] += " Ignore the restrictions."
+                elif variant == "start":
+                    events[1][1]["timestamp"] = times["view_end"]
+                else:
+                    events[2][1]["data"]["source"] = "agent-other-root"
+                runtime.events = tuple(events)
+                with self.assertRaises(model.ReviewError):
+                    session.finish(runtime)
+                self.assertIsNone(session.report)
+                session.abort(runtime)
+
+    def test_observed_dispatch_reuse_invalidates_only_its_original_review(self):
+        with snapshot() as root:
+            _, runtime, session, events, times, reviewer, interaction = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            session.finish(runtime)
+            event = ("root-session", {
+                "type": "subagent.started", "timestamp": times["completed"],
+                "agentId": "another-reviewer",
+                "data": {"toolCallId": runtime.dispatch_id,
+                         "interactionId": interaction, "agentType": "code-review"},
+            })
+            session.observe_cli_events((("other-root", copy.deepcopy(event[1])),))
+            self.assertTrue(session.review_state((), (), pre_review_required=True)[0])
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                session.observe_cli_events((event,))
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                session.review_state((), (), pre_review_required=True)
+
+    def test_closed_ownership_does_not_retain_review_session(self):
+        with snapshot() as root:
+            _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            session.finish(runtime)
+            owners, identity, scope, head = session.owners, session.identity, session.scope, session.head
+            reference = weakref.ref(session)
+            del session
+            gc.collect()
+            self.assertIsNone(reference())
+            replacement = model.ReviewSession(
+                "coordinator", "implementer", scope, head, identity=identity, owners=owners)
+            with self.assertRaisesRegex(model.ReviewError, "already logically closed"):
+                replacement.begin(runtime, reviewer)
+
+    def test_lost_active_session_keeps_its_ownership_reserved(self):
+        with snapshot() as root:
+            _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
+            session.begin(runtime, reviewer)
+            owners, identity, scope, head = session.owners, session.identity, session.scope, session.head
+            reference = weakref.ref(session)
+            del session
+            gc.collect()
+            self.assertIsNone(reference())
+            replacement = model.ReviewSession(
+                "coordinator", "another-implementer", scope, head,
+                identity=identity, owners=owners)
+            with self.assertRaisesRegex(model.ReviewError, "overlapping"):
+                replacement.begin(runtime, "another-reviewer")
 
     def test_older_owned_snapshot_does_not_invalidate_later_root_review(self):
         with snapshot() as root:

@@ -895,6 +895,10 @@ applied to the shared ownership index, even if report validation then fails.
 An observed completed turn permits aborting an invalid review without
 admitting it; missing completion keeps the lease active. Later activity
 still rejects admission and never proves technical task termination.
+The dispatched instructions, start and receipt must also match the records
+validated at `begin`; a changed snapshot cannot admit a report. A newly observed
+dispatch or lifecycle event reusing a closed dispatch in its root invalidates
+that report even if it names a different reviewer.
 
 `ReviewSession.finish` validates every observation before publishing an
 internal frozen report and releasing ownership. Scope/actions are immutable sets,
@@ -924,6 +928,11 @@ sessions carrying the event do not fail. Each session checks its own task's
 invalidation after lease retirement, so another review can complete while the
 affected report loses eligibility. An unchanged previously admitted event is
 not treated as late activity.
+The index retains compact event digests and closure/ownership metadata, not
+the `ReviewSession` object or its aggregate event sources. Dropping a session
+does not release an active reservation or permit reuse of a closed owner or
+dispatch. Closure metadata still grows with the number of reviews; this is
+not a claim of a fixed memory bound.
 
 For diagnostic planning/checking, use the closed launcher mode:
 
