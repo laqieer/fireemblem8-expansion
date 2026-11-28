@@ -88,9 +88,10 @@ def macro_value_assertion(macro, value):
 
 def compile_settings_fields(text):
     return dict(
-        line.split("=", 1)
+        (key.strip(), value.strip())
         for line in text.splitlines()
         if "=" in line and not line.lstrip().startswith("#")
+        for key, value in [line.split("=", 1)]
     )
 
 
@@ -4879,7 +4880,7 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
     def test_compile_settings_fields_ignore_non_record_lines(self):
         fields = compile_settings_fields(
             "Build settings\n\n# blue_phase_delegate=wrong\n"
-            "blue_phase_delegate=1\nconfig_fingerprint=actual\n"
+            "blue_phase_delegate = 1 \nconfig_fingerprint=actual\n"
         )
         self.assertEqual(fields["blue_phase_delegate"], "1")
         self.assertEqual(fields["config_fingerprint"], "actual")
@@ -4985,7 +4986,7 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
                 "TMPDIR": temporary,
             }
             snapshots = []
-            for value in (0, 1):
+            for value, valid in ((0, True), (1, True), (-1, False), (2, False), ("yes", False)):
                 flags_file = Path(temporary) / f"modern-cflags-{value}.txt"
                 result = subprocess.run(
                     [
@@ -5019,6 +5020,12 @@ class BluePhaseDelegateFlagTests(unittest.TestCase):
                     check=False,
                     timeout=60,
                 )
+                if not valid:
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn(
+                        "EXPANSION_BLUE_PHASE_DELEGATE", result.stdout + result.stderr
+                    )
+                    continue
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 compiled = subprocess.run(
                     [

@@ -147,9 +147,10 @@ Retreat coexist. Optional rows precede the vanilla rows in stable
 Danger-then-Charge order and End remains final. Clean debug and release
 Prologue runs remain idle in `PLAYER`, with zero blue computer starts,
 completions, or actions.
-Invalid `-1`, `2`, or textual config values and an enabled non-modern C
-profile fail before producing a ROM. A missing C default or lost Make-to-C,
-metadata, fingerprint, or compile-settings propagation fails the host check.
+Invalid `-1`, `2`, or textual Make selections, invalid C values, and an
+enabled non-modern C profile fail before producing a ROM. A missing C default
+or lost Make-to-C, metadata, fingerprint, or compile-settings propagation
+fails the host check.
 
 ### Interactions and save compatibility
 
