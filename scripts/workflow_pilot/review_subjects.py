@@ -2445,7 +2445,8 @@ def _session_probe(probe: str) -> dict:
         events = (
             (root_session, {
                 "type": "subagent.started", "timestamp": started_at, "agentId": owner,
-                "data": {"toolCallId": task, "interactionId": interaction},
+                "data": {"toolCallId": task, "interactionId": interaction,
+                         "agentType": "code-review"},
             }),
             (root_session + "-reviewer", {
                 "type": "assistant.message", "timestamp": activity_at,
@@ -2676,6 +2677,9 @@ def _session_probe(probe: str) -> dict:
             prior_runtime.events = tuple(changed_start)
             check(rejects(lambda: prior.finish(prior_runtime)),
                   "changed assignment admitted a review")
+            check(rejects(lambda: prior.abort(prior_runtime)),
+                  "changed assignment retired the original review")
+            prior_runtime.events = tuple(original)
             prior.abort(prior_runtime)
             later, later_runtime = native_session(
                 owners, alternate_events(events, minute="01"),
@@ -2718,6 +2722,46 @@ def _session_probe(probe: str) -> dict:
                 owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
             check(rejects(lambda: later.finish(later_runtime)),
                   "contradictory owner pair lost terminal uncertainty")
+
+            for field in ("agent", "role"):
+                owners = module.ReviewOwnership()
+                prior, prior_runtime = native_session(
+                    owners, events, "root-b", "reviewer-b", "dispatch-b")
+                start = json.loads(json.dumps(next(
+                    item for item in events if item[1].get("type") == "subagent.started")))
+                if field == "agent":
+                    start[1]["agentId"] = "unexpected-reviewer"
+                else:
+                    start[1]["data"]["agentType"] = "other-role"
+                prior.observe_cli_events((start,))
+                prior.abort(prior_runtime)
+                later, later_runtime = native_session(
+                    owners, alternate_events(events), "root-c", "reviewer-c", "dispatch-c")
+                check(rejects(lambda: later.finish(later_runtime)),
+                      "contradictory partial start lost terminal uncertainty")
+
+            for variant in ("interaction", "chronology", "early-completion"):
+                owners = module.ReviewOwnership()
+                active = [item for item in events if item[1].get("type") != "subagent.completed"]
+                prior, prior_runtime = native_session(
+                    owners, active, "root-b", "reviewer-b", "dispatch-b")
+                changed = json.loads(json.dumps(events))
+                for _, event in changed:
+                    if variant == "interaction" and event.get("type") == "subagent.started":
+                        event["data"]["interactionId"] = "other-interaction"
+                    if variant == "chronology" and event.get("type") == "subagent.started":
+                        event["timestamp"] = "2026-01-01T00:01:00Z"
+                    if variant in ("chronology", "early-completion") \
+                            and event.get("type") == "subagent.completed":
+                        event["timestamp"] = "2026-01-01T00:01:01Z"
+                prior_runtime.events = tuple(changed)
+                check(rejects(lambda: prior.abort(prior_runtime))
+                      and not prior.lease.finished,
+                      "replaced or chronologically invalid assignment retired the review")
+                prior_runtime.events = tuple(events)
+                prior.abort(prior_runtime)
+                check(prior.lease.outcome == "aborted",
+                      "valid original terminal did not retire the review")
 
             owners = module.ReviewOwnership()
             later, later_runtime = native_session(

@@ -931,7 +931,11 @@ still rejects admission and never proves technical task termination.
 The dispatched instructions, start and receipt must also match the records
 validated at `begin`, including when the coordinator supplies a replacement
 runtime. Its Git reader must match the session's frozen root, base and head.
-A changed snapshot cannot admit a report. A newly observed
+A changed snapshot cannot admit a report. For an assignment validated at
+`begin`, terminal-only abort and timeout also require the original dispatch and
+start records and a completion no earlier than the bound instruction receipt.
+A same-time contradictory owner or role without a completion leaves the
+possible end unbounded. A newly observed
 dispatch or lifecycle event reusing a closed dispatch in its root invalidates
 that report even if it names a different reviewer.
 

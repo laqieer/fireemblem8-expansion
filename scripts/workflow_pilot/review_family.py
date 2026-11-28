@@ -1065,7 +1065,9 @@ class ReviewOwnership:
                     valid_start = (isinstance(data, dict)
                                    and start_event.get("agentId") == observed.owner
                                    and data.get("toolCallId") == observed.dispatch
-                                   and data.get("agentType") == "code-review")
+                                   and data.get("agentType") == "code-review"
+                                   and isinstance(data.get("interactionId"), str)
+                                   and re.fullmatch(NAME_PATTERN, data["interactionId"]) is not None)
                 if (observed.state != "terminal" and valid_start and start is not None
                         and observed.started_at is None):
                     observed.started_at = start_event["timestamp"]
@@ -1098,9 +1100,12 @@ class ReviewOwnership:
                                 and completion_event["data"].get("interactionId") in (None, interaction)
                                 and dispatch <= start <= completion):
                             end = max(completion, previous_end) if previous_end else completion
-                unknown_end = bool(completions and end is None)
+                unknown_end = not valid_start or bool(completions and end is None)
                 if (observed.started_at is not None and start_event is not None
-                        and start != timestamp(observed.started_at) and end is None):
+                        and (start != timestamp(observed.started_at)
+                             or not isinstance(data, dict)
+                             or data.get("interactionId") != observed.interaction)
+                        and end is None):
                     unknown_end = True
                 self._remember_interval(observed, start, end,
                                         unknown_start=start is None, unknown_end=unknown_end)
@@ -1760,6 +1765,7 @@ class ReviewSession:
         self.task: str | None = None
         self.dispatch_namespace: str | None = None
         self.assignment_event_keys = None
+        self.assignment_received_at = None
         self.latest_cli_events = ()
         self._ownership_key = object()
         self.begin_failed = False
@@ -1862,6 +1868,7 @@ class ReviewSession:
                     "runtime task identity must be a nonblank string")
             if isinstance(runtime, CliReviewRuntime):
                 self.assignment_event_keys = runtime.assignment_event_keys
+                self.assignment_received_at = runtime.received_at
             if self.owners is not None:
                 self.owners.bind_dispatch(self, task)
         except Exception:
@@ -1941,6 +1948,18 @@ class ReviewSession:
                     and observed.role == "code-review" and observed.head == lease.head
                     and frozenset(observed.subjects) == lease.scope and observed.completed is True,
                     "wrong or stale runtime task observation")
+            if self.assignment_event_keys is not None:
+                lifecycle = frozenset(
+                    _cli_event_key((event_session, event))
+                    for event_session, event in runtime.events
+                    if event_session == self.dispatch_namespace
+                    and event.get("type") in {"tool.execution_start", "subagent.started"}
+                    and event.get("data", {}).get("toolCallId") == lease.task)
+                require(len(lifecycle) == 2 and lifecycle <= self.assignment_event_keys,
+                        "review assignment records changed before terminal retirement")
+                require(self.assignment_received_at is not None
+                        and self.assignment_received_at <= timestamp(observed.completed_at),
+                        "review completion predates the assigned instructions")
             if self.owners is not None:
                 self.owners.observe_terminal(self, observed.started_at, observed.completed_at)
             duration = (timestamp(observed.completed_at)

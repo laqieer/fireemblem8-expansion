@@ -1286,9 +1286,11 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    the newer report, while altering a captured record still invalidates its
    owner. The pre-fix negative control invalidates the newer report.
    Change the dispatch prompt, reviewer start timestamp, or receipt source
-   after `begin`: each must reject admission, while terminal-only abort still
-   retires the observed task. Repeat with a separately initialized runtime:
-   unchanged original records admit, but altered assignment records reject.
+   after `begin`: each must reject admission. A changed dispatch or start
+   also rejects terminal-only abort until the original terminal evidence is
+   supplied. A completion before the bound instruction receipt cannot retire
+   the assignment. Repeat with a separately initialized runtime: unchanged
+   original records admit, but altered assignment records reject.
    Use identical candidate Git objects from two checkout roots; a runtime and
    session bound to different roots must reject at begin or finish.
    Submit a valid case ID and maximum-length subject whose joined key exceeds
@@ -1373,7 +1375,9 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    overlapping reports and remain reserved until terminal-only abort, including
    a dispatch-attributed start with a contradictory reviewer. An active changed
    start without a terminal remains possibly open, as does a conflicting
-   start/completion pair for another reviewer. A proven sequential interval in
+   start/completion pair for another reviewer. A contradictory owner or role
+   in a partial start remains possibly open even at the original timestamp.
+   A proven sequential interval in
    either order remains valid, including unchanged partial observations. Run
    `CliReviewRuntimeTests.test_competing_start_with_unknown_terminal_invalidates_only_possible_overlap`,
    `CliReviewRuntimeTests.test_earlier_competing_review_requires_a_consistent_terminal`,
@@ -1387,6 +1391,9 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    `CliReviewRuntimeTests.test_partial_unchanged_interval_keeps_proven_sequential_review`,
    `CliReviewRuntimeTests.test_partial_unchanged_active_interval_keeps_proven_sequential_review`,
    `CliReviewRuntimeTests.test_contradictory_owner_pair_remains_uncertain_after_abort`,
+   `CliReviewRuntimeTests.test_partial_contradictory_start_remains_uncertain_after_abort`,
+   `CliReviewRuntimeTests.test_abort_rejects_replaced_bound_start`,
+   `CliReviewRuntimeTests.test_timeout_does_not_retire_replaced_start_without_ownership_index`,
    `CliReviewRuntimeTests.test_changed_active_start_without_terminal_invalidates_later_report`,
    `CliReviewRuntimeTests.test_rejected_competitor_with_contradictory_owner_remains_observed`,
    and `CliReviewRuntimeTests.test_submitted_snapshot_is_frozen_until_an_explicit_new_observation`.
