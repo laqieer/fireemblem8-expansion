@@ -1235,8 +1235,8 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    direct-read paths/sides and each exact supplied file path and `utf-8` or
    `base64` encoding, structured report format and exact standalone read-only
    commitment. Verify the dispatch ID, assigned reviewer identity, original
-   received instructions, and exact commitment message before the first tool
-   call, complete `view` start/completion events, successful results equal to
+   received instructions, and exact commitment message before the first candidate
+   read, complete `view` start/completion events, successful results equal to
    each required immutable Git blob, exact final report, and
    completed-turn event chronology before the first submitted remote review. A successful
    task-call completion is only a dispatch receipt and may precede the
@@ -1265,6 +1265,20 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    whose native source names its own root. Remove that receipt or its source,
    or replace its source with the other root, while retaining the second's
    matching receipt; the first task must reject instead of borrowing it.
+   The native runtime may load the `code-review` skill once before the
+   commitment. Require the exact skill arguments and a successful completion
+   before the commitment; reject another skill, additional arguments, a failed
+   or missing result, and every other non-`view` operation.
+   The supported CLI snapshot has the receipt and reviewer events in its
+   dispatch's root session; a distinct child-session receipt fails rather
+   than assuming that child's untagged records are exclusive to the reviewer.
+   In a shared root, unrelated untagged activity, including a reused turn or
+   interaction ID, must not invalidate the review. Such IDs alone do not prove
+   ownership; this check does not replace dispatch-time role restrictions.
+   Complete two different reviewers in one root, then reassess them using
+   their own snapshots in either order. The older snapshot must not invalidate
+   the newer report, while altering a captured record still invalidates its
+   owner. The pre-fix negative control invalidates the newer report.
    A late assistant turn-start in
    the second reviewer's event session must invalidate only the second report.
    Include that late event in the first reviewer's aggregate snapshot; the
@@ -1297,7 +1311,7 @@ for endpoint/permission evidence; it is not proof of an actual escaped defect.
    A completed-turn event is not evidence that the CLI terminated the agent.
    In source-backed event tests, reject missing/mismatched dispatch or
    assignment, wrong candidate/scope, missing or late commitment, an observed
-   non-`view` operation, missing or contradictory tool interaction identity,
+   prohibited operation, missing or contradictory tool interaction identity,
    failed/partial/unassigned/duplicate file reads,
    wrong blob bytes, noncanonical base64 or decoded binary mismatch, omitted
    required paths/sides, unavailable additional sides, unchanged-path reads,

@@ -1548,6 +1548,112 @@ class CliReviewRuntimeTests(unittest.TestCase):
         )
         return fixture, runtime, session, events, times, reviewer, interaction
 
+    def test_child_session_receipt_without_root_provenance_is_not_admitted(self):
+        with snapshot() as root:
+            _, runtime, session, _, _, reviewer, _ = self.native_runtime(
+                root, reviewer_session_id="reviewer-session")
+            with self.assertRaisesRegex(model.ReviewError, "root.*session"):
+                session.begin(runtime, reviewer)
+            self.assertIsNone(session.report)
+
+    def test_returned_task_cannot_replace_the_bound_dispatch(self):
+        with snapshot() as root:
+            _, runtime, session, _, _, reviewer, _ = self.native_runtime(root)
+            actual_start = runtime.start
+            def mismatched_start(**arguments):
+                actual_start(**arguments)
+                return "another-dispatch"
+            runtime.start = mismatched_start
+            with self.assertRaisesRegex(model.ReviewError, "dispatch.*changed"):
+                session.begin(runtime, reviewer)
+            self.assertIsNone(session.report)
+            session.abort(runtime)
+
+    def test_older_owned_snapshot_does_not_invalidate_later_root_review(self):
+        with snapshot() as root:
+            _, first_runtime, first, events, _, reviewer, _ = self.native_runtime(root)
+            first.begin(first_runtime, reviewer)
+            first.finish(first_runtime)
+            second_events = json.loads(
+                json.dumps(events).replace("dispatch-1", "dispatch-2")
+                .replace("reviewer-1", "reviewer-2").replace("interaction-1", "interaction-2"))
+            second_runtime = model.CliReviewRuntime(
+                tuple(events) + tuple(second_events), dispatch_id="dispatch-2",
+                root_session_id="root-session", candidate_reader=first_runtime.candidate_reader,
+                required_reads=first_runtime.required_reads)
+            second = model.ReviewSession(
+                "coordinator", "implementer-b", first.scope, first.head, identity=first.identity,
+                owners=first.owners, readers={"read-candidate": first_runtime.candidate_reader})
+            second.begin(second_runtime, "reviewer-2")
+            second.finish(second_runtime)
+            self.assertTrue(second.review_state((), (), pre_review_required=True)[0])
+            self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
+            self.assertTrue(second.review_state((), (), pre_review_required=True)[0])
+
+    def test_other_owner_cannot_supply_reviewer_evidence(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            for _, event in events:
+                if event.get("agentId") == reviewer and event["type"] not in {
+                    "user.message", "subagent.started", "subagent.completed",
+                }:
+                    event["agentId"] = "another-reviewer"
+            runtime.events = tuple(events)
+            session.begin(runtime, reviewer)
+            with self.assertRaises(model.ReviewError):
+                session.finish(runtime)
+            self.assertIsNone(session.report)
+
+    def test_unrelated_untagged_shared_root_activity_is_not_attributed(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, _ = self.native_runtime(root)
+            events.insert(2, ("root-session", {
+                "type": "tool.execution_start",
+                "timestamp": "2026-01-01T00:00:01.500Z",
+                "data": {"interactionId": "other-interaction", "turnId": "other-turn",
+                         "toolCallId": "other-call", "toolName": "bash",
+                         "arguments": {"command": "unrelated"}},
+            }))
+            runtime.events = tuple(events)
+            session.begin(runtime, reviewer)
+            session.finish(runtime)
+            self.assertTrue(session.review_state((), (), pre_review_required=True)[0])
+
+    def test_untagged_dispatch_receipt_is_not_reviewer_activity(self):
+        with snapshot() as root:
+            _, runtime, session, events, _, reviewer, interaction = self.native_runtime(root)
+            receipt = next(event for _, event in events
+                           if event.get("type") == "tool.execution_complete"
+                           and event["data"].get("toolCallId") == runtime.dispatch_id)
+            receipt["agentId"] = None
+            receipt["data"]["interactionId"] = interaction
+            runtime.events = tuple(events)
+            session.begin(runtime, reviewer)
+            session.finish(runtime)
+            self.assertTrue(session.review_state((), (), pre_review_required=True)[0])
+            receipt["data"]["success"] = False
+            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
+                session.review_state((), (), pre_review_required=True)
+
+    def test_untagged_shared_root_activity_is_not_attributed_by_interaction(self):
+        for after_closure in (False, True):
+            with self.subTest(after_closure=after_closure), snapshot() as root:
+                _, runtime, session, events, times, reviewer, interaction = self.native_runtime(root)
+                event = ("root-session", {
+                    "type": "tool.execution_start",
+                    "timestamp": times["completed"],
+                    "data": {"interactionId": interaction, "turnId": "turn-1",
+                             "toolCallId": "unknown-owner", "toolName": "bash",
+                             "arguments": {"command": "not permitted"}},
+                })
+                if not after_closure:
+                    runtime.events = tuple(events + [event])
+                session.begin(runtime, reviewer)
+                session.finish(runtime)
+                if after_closure:
+                    session.observe_cli_events((event,))
+                self.assertTrue(session.review_state((), (), pre_review_required=True)[0])
+
     def test_completed_cli_turn_binds_instructions_reads_findings_and_logical_closure(self):
         with snapshot() as root:
             finding = {
@@ -1740,6 +1846,47 @@ class CliReviewRuntimeTests(unittest.TestCase):
             runtime.events = tuple(events)
             session.begin(runtime, reviewer)
             with self.assertRaisesRegex(model.ReviewError, "commitment"):
+                session.finish(runtime)
+
+    def test_native_code_review_skill_load_precedes_commitment_without_widening_reads(self):
+        for variant in ("valid", "wrong-skill", "extra-argument", "failed", "missing-result"):
+            with self.subTest(variant=variant), snapshot() as root:
+                _, runtime, session, events, _, reviewer, interaction = self.native_runtime(root)
+                arguments = {"skill": "other" if variant == "wrong-skill" else "code-review"}
+                if variant == "extra-argument":
+                    arguments["uri"] = "other"
+                start = ("root-session", {
+                    "type": "tool.execution_start", "timestamp": "2026-01-01T00:00:02.200Z",
+                    "agentId": reviewer, "data": {"turnId": "turn-0",
+                        "toolCallId": "skill-load", "toolName": "skill", "arguments": arguments},
+                })
+                done = ("root-session", {
+                    "type": "tool.execution_complete", "timestamp": "2026-01-01T00:00:02.500Z",
+                    "agentId": reviewer, "data": {"interactionId": interaction,
+                        "turnId": "turn-0", "toolCallId": "skill-load",
+                        "success": variant != "failed"},
+                })
+                events[3:3] = [start] if variant == "missing-result" else [start, done]
+                runtime.events = tuple(events)
+                session.begin(runtime, reviewer)
+                if variant == "valid":
+                    self.assertIn("skill", session.finish(runtime).actions)
+                else:
+                    with self.assertRaises(model.ReviewError):
+                        session.finish(runtime)
+                    self.assertIsNone(session.report)
+
+    def test_completion_without_tool_identity_is_not_a_skill_completion(self):
+        with snapshot() as root:
+            _, runtime, session, events, times, reviewer, interaction = self.native_runtime(root)
+            events.insert(-2, ("root-session", {
+                "type": "tool.execution_complete", "timestamp": times["view_end"],
+                "agentId": reviewer, "data": {"interactionId": interaction,
+                    "turnId": "turn-0", "success": True},
+            }))
+            runtime.events = tuple(events)
+            session.begin(runtime, reviewer)
+            with self.assertRaises(model.ReviewError):
                 session.finish(runtime)
 
     def test_candidate_reads_accept_explicit_base_and_head_sides(self):
@@ -2023,15 +2170,13 @@ class CliReviewRuntimeTests(unittest.TestCase):
         with snapshot() as root:
             owners = model.ReviewOwnership()
             _, first_runtime, first, _, _, reviewer, _ = self.native_runtime(
-                root, root_session_id="root-session-1",
-                reviewer_session_id="review-session-1")
+                root, root_session_id="root-session-1")
             first.owners = owners
             first.begin(first_runtime, reviewer)
             first.finish(first_runtime)
 
             _, second_runtime, second, _, _, second_reviewer, _ = self.native_runtime(
-                root, root_session_id="root-session-2",
-                reviewer_session_id="review-session-2")
+                root, root_session_id="root-session-2")
             second.owners = owners
             second.begin(second_runtime, second_reviewer)
             second.finish(second_runtime)
@@ -2042,7 +2187,7 @@ class CliReviewRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(model.ReviewError, "already logically closed"):
                 same_session.begin(first_runtime, reviewer)
 
-            late_event = ("review-session-2", {
+            late_event = ("root-session-2", {
                 "type": "assistant.turn_start",
                 "timestamp": "2026-01-01T00:01:00Z",
                 "agentId": second_reviewer,
@@ -2066,11 +2211,9 @@ class CliReviewRuntimeTests(unittest.TestCase):
 
         with snapshot() as root:
             fixture1, first_runtime, first, first_events, _, reviewer, _ = self.native_runtime(
-                root, root_session_id="root-session-1",
-                reviewer_session_id="reviewer-session-1")
+                root, root_session_id="root-session-1")
             fixture2, second_runtime, second, second_events, _, second_reviewer, _ = (
-                self.native_runtime(root, root_session_id="root-session-2",
-                                    reviewer_session_id="reviewer-session-2"))
+                self.native_runtime(root, root_session_id="root-session-2"))
             aggregate = tuple(first_events) + shifted(second_events, 60)
             first_runtime.events = aggregate
             second_runtime.events = aggregate
@@ -2099,7 +2242,7 @@ class CliReviewRuntimeTests(unittest.TestCase):
 
             missing_own_receipt = tuple(
                 (session_id, event) for session_id, event in aggregate
-                if not (session_id == "reviewer-session-1"
+                if not (session_id == "root-session-1"
                         and event.get("type") == "user.message"))
             missing_runtime = first_runtime
             missing_runtime.events = missing_own_receipt
@@ -2115,22 +2258,18 @@ class CliReviewRuntimeTests(unittest.TestCase):
     def test_overlapping_roots_cannot_supply_another_reviewers_receipt(self):
         with snapshot() as root:
             fixture, runtime, session, events, _, reviewer, _ = self.native_runtime(
-                root, root_session_id="root-session-1",
-                reviewer_session_id="reviewer-session-1")
+                root, root_session_id="root-session-1")
             other_events = []
             for session_id, event in events:
                 copied = copy.deepcopy(event)
                 if copied.get("type") == "user.message":
                     copied["data"]["source"] = "agent-root-session-2"
-                other_session = {
-                    "root-session-1": "root-session-2",
-                    "reviewer-session-1": "reviewer-session-2",
-                }[session_id]
+                other_session = {"root-session-1": "root-session-2"}[session_id]
                 other_events.append((other_session, copied))
 
             runtime.events = tuple(events + other_events)
             session.begin(runtime, reviewer)
-            self.assertEqual(runtime.reviewer_session_id, "reviewer-session-1")
+            self.assertEqual(runtime.reviewer_session_id, "root-session-1")
             session.finish(runtime)
 
             other_runtime = model.CliReviewRuntime(
@@ -2141,7 +2280,7 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 identity=("owner/repo", 2, fixture["base"]), owners=session.owners,
                 readers={"read-candidate": runtime.candidate_reader})
             other.begin(other_runtime, reviewer)
-            self.assertEqual(other_runtime.reviewer_session_id, "reviewer-session-2")
+            self.assertEqual(other_runtime.reviewer_session_id, "root-session-2")
             other.finish(other_runtime)
 
             for source in ("missing-receipt", None, "agent-root-session-2"):
@@ -2175,15 +2314,13 @@ class CliReviewRuntimeTests(unittest.TestCase):
         for operation in ("finish", "abort"):
             with self.subTest(operation=operation), snapshot() as root:
                 fixture, first_runtime, first, events, _, reviewer, _ = self.native_runtime(
-                    root, root_session_id="root-A", reviewer_session_id="reviewer-A")
+                    root, root_session_id="root-A")
                 other_events = []
                 for event_session, event in events:
                     event = copy.deepcopy(event)
                     if event.get("type") == "user.message":
                         event["data"]["source"] = "agent-root-B"
-                    other_events.append(({
-                        "root-A": "root-B", "reviewer-A": "reviewer-B",
-                    }[event_session], event))
+                    other_events.append(({"root-A": "root-B"}[event_session], event))
                 first_runtime.events = tuple(events + other_events)
                 second_runtime = model.CliReviewRuntime(
                     first_runtime.events, dispatch_id=first_runtime.dispatch_id,
@@ -2208,12 +2345,12 @@ class CliReviewRuntimeTests(unittest.TestCase):
     def test_failed_terminal_read_propagates_shared_activity_and_allows_abort(self):
         with snapshot() as root:
             _, first_runtime, first, first_events, _, first_reviewer, _ = self.native_runtime(
-                root, root_session_id="root-A", reviewer_session_id="reviewer-A")
+                root, root_session_id="root-A")
             first.begin(first_runtime, first_reviewer)
             first.finish(first_runtime)
             self.assertTrue(first.review_state((), (), pre_review_required=True)[0])
             _, second_runtime, second, second_events, _, second_reviewer, _ = self.native_runtime(
-                root, root_session_id="root-B", reviewer_session_id="reviewer-B")
+                root, root_session_id="root-B")
             second.owners = first.owners
             second.identity = ("owner/repo", 2, second.identity[2])
 
@@ -2224,7 +2361,7 @@ class CliReviewRuntimeTests(unittest.TestCase):
                 })
 
             second_runtime.events = tuple(first_events + second_events + [
-                late("reviewer-A", first_reviewer), late("reviewer-B", second_reviewer),
+                late("root-A", first_reviewer), late("root-B", second_reviewer),
             ])
             second.begin(second_runtime, second_reviewer)
             with self.assertRaises(model.ReviewError):
@@ -2336,54 +2473,6 @@ class CliReviewRuntimeTests(unittest.TestCase):
             event["agentId"] = "another-reviewer"
             with self.assertRaisesRegex(model.ReviewError, "invalidated"):
                 session.review_state((), (), pre_review_required=True)
-
-    def test_mutated_unattributed_bound_event_invalidates_readiness(self):
-        with snapshot() as root:
-            _, runtime, session, events, _, reviewer, _ = self.native_runtime(
-                root, reviewer_session_id="reviewer-session")
-            event = next(
-                event for event_session, event in events
-                if event_session == "reviewer-session"
-                and event.get("type") == "tool.execution_start")
-            event["agentId"] = None
-            runtime.events = tuple(events)
-            session.begin(runtime, reviewer)
-            session.finish(runtime)
-            self.assertTrue(session.review_state((), (), pre_review_required=True)[0])
-            event["data"]["toolName"] = "bash"
-            with self.assertRaisesRegex(model.ReviewError, "invalidated"):
-                session.review_state((), (), pre_review_required=True)
-
-    def test_unattributed_activity_in_bound_reviewer_session_is_rejected(self):
-        for event_interaction in ("interaction-1", "other-interaction"):
-            with self.subTest(interaction=event_interaction), snapshot() as root:
-                _, runtime, session, events, times, reviewer, _ = self.native_runtime(
-                    root, reviewer_session_id="reviewer-session")
-                final_index = next(
-                    index for index, (_, event) in enumerate(events)
-                    if event.get("type") == "assistant.message"
-                    and event.get("data", {}).get("phase") == "final_answer")
-                events.insert(final_index, ("reviewer-session", {
-                    "type": "tool.execution_start",
-                    "timestamp": times["view_end"],
-                    "data": {
-                        "interactionId": event_interaction,
-                        "turnId": "turn-1",
-                        "toolCallId": "unattributed-bash",
-                        "toolName": "bash",
-                        "arguments": {"command": "not permitted"},
-                    },
-                }))
-                runtime.events = tuple(events)
-                session.begin(runtime, reviewer)
-                message = (
-                    "bound reviewer session contains contradictory interaction activity"
-                    if event_interaction == "other-interaction"
-                    else "prohibited or unverified operation"
-                )
-                with self.assertRaisesRegex(model.ReviewError, message):
-                    session.finish(runtime)
-                self.assertIsNone(session.report)
 
     def test_initial_reviewer_activity_must_match_assigned_dispatch(self):
         for case in ("contradictory-message", "additional-dispatch"):

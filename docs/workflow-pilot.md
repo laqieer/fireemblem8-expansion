@@ -692,8 +692,10 @@ successful task-call completion as a dispatch receipt, and the matching
 `subagent.started` and reviewer instruction message. The native receipt's
 `source` must equal `agent-` followed by the assigned root session ID; a
 missing or different source cannot bind the receipt. The instruction receipt
-must match the assigned prompt and occur after the reviewer start. If the
-matching completion event is already observed, use that dispatch interval to
+must match the assigned prompt and occur after the reviewer start. The
+dispatched prompt itself must match the generated review instruction template;
+free-form additions are unsupported because they may contradict the assignment.
+If the matching completion event is already observed, use that dispatch interval to
 select the receipt; otherwise defer its upper-bound check until `finish`.
 Retain the selected receipt and use it for scope extraction rather than
 searching unrelated event sessions again. The dispatch receipt may arrive
@@ -702,8 +704,10 @@ proves its turn is complete. After that completed-turn notification,
 `finish` validates the reviewer's observations and report. It returns
 immediately and does not poll. This is the owner-approved
 instruction-based trust model: the reviewer must state the exact read-only
-commitment as a standalone commentary message before any tool operation; extra
-text in that message does not satisfy the commitment. This does **not** claim that the CLI has
+commitment as a standalone commentary message before any candidate read; extra
+text in that message does not satisfy the commitment. The native CLI may first
+load the `code-review` skill once with exact arguments and a successful
+completion; no other skill or operation is admitted. This does **not** claim that the CLI has
 technically terminated the reviewer or enforced read-only permissions.
 
 Admission binds the assigned reviewer and dispatch to the candidate SHA and
@@ -869,6 +873,14 @@ rejects reuse of the completed `(root session, reviewer)` identity or
 `(root session, task dispatch)` for review admission. Event invalidation uses
 the observed event-session plus reviewer identity, preventing identical agent
 IDs in unrelated sessions from cross-attributing activity.
+The CLI adapter accepts reviewer receipts and activity from the dispatch's
+shared root session only. A receipt in a distinct child session is unsupported
+and fails admission: the aggregate input does not establish that the child's
+untagged events belong exclusively to that reviewer. In the shared root,
+untagged activity is not attributed by turn or interaction ID, which can also
+identify coordinator activity. The adapter cannot prove ownership of untagged
+activity from this stream; dispatch-time read-only role restrictions remain
+necessary.
 `begin` requires `runtime.start` to return a nonblank string task identity,
 preserved unchanged. Missing, blank or wrong-type handles unwind the attempted
 reservation before any lease or local report can be created; a later valid
@@ -901,8 +913,11 @@ not authenticated provenance from a JSON author.
 At logical closure, the shared ownership index captures the exact review
 activity records validated for that task. The initial reviewer snapshot is
 checked against the assigned interaction, dispatch and task interval before
-any activity enters this baseline. Later aggregate snapshots compare complete
-event records with that validated closure snapshot. Previously unseen review
+any activity enters this baseline. Each review's own complete snapshots
+compare its captured event records with that validated closure snapshot; an
+older sibling snapshot cannot establish that a newer review lost records.
+Later aggregate observations still propagate attributable new activity to
+the owning review. Previously unseen review
 activity invalidates only its owning `(task, owner)`, including an in-turn
 event with the same interaction and a timestamp equal to completion; unrelated
 sessions carrying the event do not fail. Each session checks its own task's
